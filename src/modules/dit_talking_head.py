@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import platform
+import os  # added
 
 from .common import PositionalEncoding, enc_dec_mask, pad_audio
 from ..config.base_config import make_abs_path
@@ -84,13 +85,27 @@ class DitTalkingHead(nn.Module):
             from .hubert import HubertModel
             self.audio_encoder = HubertModel.from_pretrained(make_abs_path('../../pretrained_weights/hubert-base-ls960'))
             self.audio_encoder.feature_extractor._freeze_parameters()
-        elif self.audio_model == 'hubert_zh_ori' or self.audio_model == 'hubert_zh': # 根据经验，hubert特征提取器效果更好
-            print("using hubert chinese ori")
-            model_path = '../../pretrained_weights/TencentGameMate:chinese-hubert-base'
-            if platform.system() == "Windows":
-                model_path = '../../pretrained_weights/chinese-hubert-base'
+        elif self.audio_model == 'hubert_zh_ori' or self.audio_model == 'hubert_zh': # Chinese HuBERT
+            print("using Chinese HuBERT encoder")
             from .hubert import HubertModel
-            self.audio_encoder = HubertModel.from_pretrained(make_abs_path(model_path))
+            # Try multiple possible local directory names; fall back to HF hub id if none found
+            local_candidates = [
+                '../../pretrained_weights/chinese-hubert-base',  # preferred local dir name
+                '../../pretrained_weights/TencentGameMate:chinese-hubert-base',  # legacy (contains colon)
+                '../../pretrained_weights/TencentGameMate_chinese-hubert-base',  # alternative with underscore
+            ]
+            chosen_path = None
+            for rel in local_candidates:
+                abs_path = make_abs_path(rel)
+                if os.path.isdir(abs_path):
+                    chosen_path = abs_path
+                    break
+            if chosen_path is None:
+                # Use remote repo id (namespace/repo_name) if no local directory exists
+                hub_id = 'TencentGameMate/chinese-hubert-base'
+                self.audio_encoder = HubertModel.from_pretrained(hub_id)
+            else:
+                self.audio_encoder = HubertModel.from_pretrained(chosen_path)
             self.audio_encoder.feature_extractor._freeze_parameters()
         else:
             raise ValueError(f'Unknown audio model {self.audio_model}!')
